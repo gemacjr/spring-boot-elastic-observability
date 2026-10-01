@@ -1,0 +1,29 @@
+filebeat.modules:
+  # Article: `filebeat modules enable mysql system auditd` + custom slow log path
+  - module: mysql
+    error:
+      enabled: true
+      var.paths: ["/var/log/mysql/error.log*"]
+    slowlog:
+      enabled: true
+      var.paths: ["/var/log/mysql/mariadb-slow.log*"]
+  # system/auditd need a real Linux host's /var/log and audit subsystem; enable them when
+  # Filebeat runs on the VM itself instead of in a container.
+
+filebeat.inputs:
+  # Spring Boot ECS JSON logs -> correlated with APM traces via trace.id
+  - type: filestream
+    id: spring-app-ecs
+    paths: ["/var/log/app/*.json"]
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+          expand_keys: true
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+
+setup.kibana:
+  host: "http://kibana:5601"
+setup.dashboards.enabled: true

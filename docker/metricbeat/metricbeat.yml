@@ -1,0 +1,23 @@
+metricbeat.modules:
+  # Article: `metricbeat modules enable mysql system`
+  - module: mysql
+    metricsets: ["status", "galera_status", "performance"]
+    period: 10s
+    hosts: ["springuser:ThePassword@tcp(mariadb:3306)/"]
+
+  - module: system
+    metricsets: ["cpu", "load", "memory", "network", "process", "process_summary"]
+    period: 10s
+    processes: ['.*']
+
+  - module: docker
+    metricsets: ["container", "cpu", "memory", "network", "healthcheck"]
+    hosts: ["unix:///var/run/docker.sock"]
+    period: 10s
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+
+setup.kibana:
+  host: "http://kibana:5601"
+setup.dashboards.enabled: true

@@ -1,0 +1,104 @@
+# Local stand-in for the article's Elastic Cloud deployment + GCP VM.
+# Security is disabled for a frictionless local demo — do not expose these ports publicly.
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.22
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: [es-data:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      retries: 30
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.19.22
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports: ["5601:5601"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:5601/api/status | grep -q '\"level\":\"available\"'"]
+      interval: 10s
+      retries: 40
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.19.22
+    command: >
+      apm-server -e --strict.perms=false
+        -E apm-server.host=0.0.0.0:8200
+        -E output.elasticsearch.hosts=["http://elasticsearch:9200"]
+    ports: ["8200:8200"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_DATABASE: db_example
+      MARIADB_USER: springuser
+      MARIADB_PASSWORD: ThePassword
+    ports: ["3306:3306"]
+    volumes:
+      - ./docker/mariadb/50-server.cnf:/etc/mysql/conf.d/50-server.cnf:ro
+      - mysql-logs:/var/log/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      DB_HOST: mariadb
+      LOG_FILE: /var/log/app/app.log
+      ELASTIC_APM_SERVER_URL: http://apm-server:8200
+      ELASTIC_APM_SERVICE_NAME: winter-mysql
+      ELASTIC_APM_APPLICATION_PACKAGES: com.example
+      ELASTIC_APM_ENVIRONMENT: docker
+    ports: ["8080:8080"]
+    volumes: [app-logs:/var/log/app]
+    depends_on:
+      mariadb: { condition: service_healthy }
+      apm-server: { condition: service_started }
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.19.22
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./docker/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - mysql-logs:/var/log/mysql:ro
+      - app-logs:/var/log/app:ro
+    depends_on:
+      kibana: { condition: service_healthy }
+
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:8.19.22
+    user: root
+    command: ["metricbeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./docker/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      kibana: { condition: service_healthy }
+      mariadb: { condition: service_healthy }
+
+  heartbeat:
+    image: docker.elastic.co/beats/heartbeat:8.19.22
+    command: ["heartbeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./docker/heartbeat/heartbeat.yml:/usr/share/heartbeat/heartbeat.yml:ro
+    depends_on:
+      kibana: { condition: service_healthy }
+
+volumes:
+  es-data:
+  mysql-logs:
+  app-logs:

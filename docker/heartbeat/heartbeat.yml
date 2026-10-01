@@ -1,0 +1,28 @@
+# Article: synthetic POST against the app, asserting the "Saved" response
+heartbeat.monitors:
+  - type: http
+    id: spring-todo-app
+    name: SpringToDoApp
+    schedule: '@every 5s'
+    urls: ["http://app:8080/demo/add"]
+    check.request:
+      method: POST
+      headers:
+        'Content-Type': 'application/x-www-form-urlencoded'
+      body: "name=first&email=someemail%40someemailprovider.com"
+    check.response:
+      status: [200]
+      body:
+        - Saved
+        - saved
+    response.include_body: 'always'
+
+  - type: http
+    id: spring-app-health
+    name: SpringAppHealth
+    schedule: '@every 10s'
+    urls: ["http://app:8080/actuator/health"]
+    check.response.status: [200]
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
